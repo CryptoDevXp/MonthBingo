@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Monatsbingo App Icon">
+  <defs>
+    <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#8a7df9"/>
+      <stop offset="100%" stop-color="#b889eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="92" fill="url(#bg)"/>
+  <rect x="56" y="56" width="400" height="400" rx="48" fill="#f3efff" opacity="0.96"/>
+  <g fill="#ffffff" opacity="0.92">
+    <rect x="88" y="88" width="92" height="92" rx="18" fill="#f7d8d8"/>
+    <rect x="210" y="88" width="92" height="92" rx="18" fill="#fde7c9"/>
+    <rect x="332" y="88" width="92" height="92" rx="18" fill="#dff5dc"/>
+    <rect x="88" y="210" width="92" height="92" rx="18" fill="#d9f0f3"/>
+    <rect x="210" y="210" width="92" height="92" rx="18" fill="#dde4ff"/>
+    <rect x="332" y="210" width="92" height="92" rx="18" fill="#f7d9ea"/>
+    <rect x="88" y="332" width="92" height="92" rx="18" fill="#d7f0e2"/>
+    <rect x="210" y="332" width="92" height="92" rx="18" fill="#f8e4c4"/>
+    <rect x="332" y="332" width="92" height="92" rx="18" fill="#d9eafd"/>
+  </g>
+  <path d="M154 270l34 34 78-92" fill="none" stroke="#7c6df0" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

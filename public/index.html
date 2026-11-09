@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#8a7df9" />
+    <meta name="description" content="Monatsbingo mit 16 Feldern und lokaler Speicherung." />
+    <title>Monatsbingo</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/icon.svg" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <p class="eyebrow">Monatsübersicht</p>
+        <h2>Gespeicherte Boards</h2>
+        <ul id="monthList" class="month-list" aria-live="polite"></ul>
+      </aside>
+
+      <main class="app-shell">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Monatsplaner</p>
+            <h1>Monatsbingo</h1>
+          </div>
+          <div class="toolbar">
+            <label for="monthInput">Monat</label>
+            <input id="monthInput" type="month" />
+            <button id="newBoardButton" type="button" class="secondary">Neu</button>
+            <button id="saveButton" type="button">Speichern</button>
+            <button id="printButton" type="button" class="ghost">Drucken / PDF</button>
+          </div>
+        </header>
+
+        <p id="status" class="status" aria-live="polite"></p>
+
+        <section id="board" class="board" aria-label="Bingo-Felder"></section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/service-worker.js").catch((error) => {
+            console.warn("Service Worker konnte nicht registriert werden:", error);
+          });
+
+          navigator.serviceWorker.addEventListener("controllerchange", () => {
+            window.location.reload();
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
