@@ -5,6 +5,220 @@ const saveButton = document.getElementById("saveButton");
 const monthListElement = document.getElementById("monthList");
 const newBoardButton = document.getElementById("newBoardButton");
 const printButton = document.getElementById("printButton");
+const installButton = document.getElementById("installButton");
+const installPrompt = document.getElementById("installPrompt");
+const installPromptAction = document.getElementById("installPromptAction");
+const installPromptDismiss = document.getElementById("installPromptDismiss");
+const languageSelect = document.getElementById("languageSelect");
+const monthLabel = document.getElementById("monthLabel");
+const languageLabel = document.getElementById("languageLabel");
+
+let deferredInstallPrompt = null;
+let installPromptDismissed = false;
+let currentLanguage = "de";
+
+const LANGUAGE_STORAGE_KEY = "month-bingo-language";
+const DEFAULT_LANGUAGE = "de";
+const translations = {
+  de: {
+    month: "Monat",
+    language: "Sprache",
+    new: "Neu",
+    save: "Speichern",
+    installApp: "App installieren",
+    print: "Drucken / PDF",
+    savedBoards: "Gespeicherte Boards",
+    monthlyOverview: "Monatsübersicht",
+    monthlyPlanner: "Monatsplaner",
+    installTitle: "Monatsbingo installieren",
+    installDescription: "Speicher die App auf deinem Startbildschirm und nutze sie wie eine normale App.",
+    install: "Installieren",
+    later: "Später",
+    emptyState: "Noch keine Boards.",
+    boardDeleteConfirm: "Board für {label} wirklich löschen?",
+    boardDeleteSuccess: "Board für {label} gelöscht.",
+    boardDeleteSuccessFresh: "Board für {label} gelöscht. Neues Board für {freshLabel} vorbereitet.",
+    boardDeleteTitle: "Board für {label} löschen",
+    deleteAction: "Löschen",
+    deleteFallback: "Server nicht erreichbar. Lokale Löschung wurde übernommen.",
+    boardLoadFailure: "Kein Board für {label} gefunden.",
+    boardLoaded: "Board für {label} lokal geladen",
+    boardLoadedServer: "Board für {label} geladen",
+    serverFallback: "Server nicht erreichbar. Lokale Version wird verwendet.",
+    serverFallbackMissing: "Server nicht erreichbar. Kein lokales Board für {label} gefunden.",
+    selectMonth: "Bitte wähle zuerst einen Monat aus.",
+    installBlocked: "Die App kann in diesem Browser nicht installiert werden. Auf Mobilgeräten meist über 'Teilen' > 'Zum Startbildschirm'.",
+    installAccepted: "Installationsdialog akzeptiert. Die App wird installiert.",
+    installCancelled: "Installation abgebrochen.",
+    installFailed: "Die Installation konnte nicht gestartet werden.",
+    saveSuccess: "Erfolgreich gespeichert für {label}",
+    saveSuccessLocal: "Erfolgreich lokal gespeichert für {label}",
+    saveFallback: "Server nicht erreichbar. Lokal gespeichert und fortgesetzt.",
+    newBoardLocal: "Neues zusätzliches Board für {label} lokal erstellt",
+    newBoardServer: "Neues zusätzliches Board für {label} erstellt",
+    newBoardLocalFallback: "Server nicht erreichbar. Neues lokal gespeichertes Board wurde erstellt.",
+    appInstalled: "App wurde installiert.",
+    loadMonthListError: "Monatsübersicht konnte nicht geladen werden.",
+    loadBoardError: "Board konnte nicht geladen werden.",
+    boardDeleteError: "Löschen fehlgeschlagen.",
+    saveError: "Speichern fehlgeschlagen.",
+    createBoardError: "Neues Board konnte nicht erstellt werden."
+  },
+  en: {
+    month: "Month",
+    language: "Language",
+    new: "New",
+    save: "Save",
+    installApp: "Install app",
+    print: "Print / PDF",
+    savedBoards: "Saved boards",
+    monthlyOverview: "Monthly overview",
+    monthlyPlanner: "Monthly planner",
+    installTitle: "Install Month Bingo",
+    installDescription: "Save the app to your home screen and use it like a regular app.",
+    install: "Install",
+    later: "Later",
+    emptyState: "No boards yet.",
+    boardDeleteConfirm: "Delete board for {label}?",
+    boardDeleteSuccess: "Board for {label} deleted.",
+    boardDeleteSuccessFresh: "Board for {label} deleted. A new board for {freshLabel} is ready.",
+    boardDeleteTitle: "Delete board for {label}",
+    deleteAction: "Delete",
+    deleteFallback: "Server unavailable. Local deletion was applied.",
+    boardLoadFailure: "No board found for {label}.",
+    boardLoaded: "Board for {label} loaded locally",
+    boardLoadedServer: "Board for {label} loaded",
+    serverFallback: "Server unavailable. Local version is used.",
+    serverFallbackMissing: "Server unavailable. No local board found for {label}.",
+    selectMonth: "Please select a month first.",
+    installBlocked: "This app cannot be installed in this browser. On mobile devices, use 'Share' > 'Add to Home Screen'.",
+    installAccepted: "Install prompt accepted. The app is being installed.",
+    installCancelled: "Installation cancelled.",
+    installFailed: "The installation could not be started.",
+    saveSuccess: "Saved successfully for {label}",
+    saveSuccessLocal: "Saved locally successfully for {label}",
+    saveFallback: "Server unavailable. Saved locally and continued.",
+    newBoardLocal: "New additional board for {label} created locally",
+    newBoardServer: "New additional board for {label} created",
+    newBoardLocalFallback: "Server unavailable. A new local board was created.",
+    appInstalled: "App installed.",
+    loadMonthListError: "Could not load the monthly overview.",
+    loadBoardError: "Could not load the board.",
+    boardDeleteError: "Delete failed.",
+    saveError: "Save failed.",
+    createBoardError: "Could not create a new board."
+  }
+};
+
+const t = (key, replacements = {}) => {
+  const dictionary = translations[currentLanguage] ?? translations[DEFAULT_LANGUAGE];
+  let text = dictionary[key] ?? translations[DEFAULT_LANGUAGE][key] ?? key;
+
+  Object.entries(replacements).forEach(([placeholder, value]) => {
+    text = text.replace(new RegExp(`\\{${placeholder}\\}`, "g"), String(value));
+  });
+
+  return text;
+};
+
+const getLanguageTag = () => (currentLanguage === "en" ? "en-US" : "de-DE");
+
+const isValidLanguage = (value) => value === "de" || value === "en";
+
+const getStoredLanguage = () => {
+  try {
+    const storedValue = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    return isValidLanguage(storedValue) ? storedValue : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const getDefaultLanguageFromSettings = (settings) => {
+  if (!settings || typeof settings !== "object") {
+    return DEFAULT_LANGUAGE;
+  }
+
+  return isValidLanguage(settings.defaultLanguage) ? settings.defaultLanguage : DEFAULT_LANGUAGE;
+};
+
+const applyLanguage = () => {
+  const language = isValidLanguage(currentLanguage) ? currentLanguage : DEFAULT_LANGUAGE;
+  currentLanguage = language;
+  document.documentElement.lang = language;
+  document.title = language === "en" ? "Month Bingo" : "Monatsbingo";
+
+  if (monthLabel) {
+    monthLabel.textContent = t("month");
+  }
+
+  if (languageLabel) {
+    languageLabel.textContent = t("language");
+  }
+
+  if (languageSelect) {
+    languageSelect.value = currentLanguage;
+  }
+
+  if (installPromptAction) {
+    installPromptAction.textContent = t("install");
+  }
+
+  if (installPromptDismiss) {
+    installPromptDismiss.textContent = t("later");
+  }
+
+  if (newBoardButton) {
+    newBoardButton.textContent = t("new");
+  }
+
+  if (saveButton) {
+    saveButton.textContent = t("save");
+  }
+
+  if (installButton) {
+    installButton.textContent = t("installApp");
+  }
+
+  if (printButton) {
+    printButton.textContent = t("print");
+  }
+
+  if (installPrompt) {
+    const title = installPrompt.querySelector("strong");
+    const description = installPrompt.querySelector("span");
+    if (title) title.textContent = t("installTitle");
+    if (description) description.textContent = t("installDescription");
+  }
+
+  const overviewHeading = document.querySelector(".sidebar h2");
+  if (overviewHeading) {
+    overviewHeading.textContent = t("savedBoards");
+  }
+
+  const overviewEyebrow = document.querySelector(".sidebar .eyebrow");
+  if (overviewEyebrow) {
+    overviewEyebrow.textContent = t("monthlyOverview");
+  }
+
+  const topbarEyebrow = document.querySelector(".topbar .eyebrow");
+  if (topbarEyebrow) {
+    topbarEyebrow.textContent = t("monthlyPlanner");
+  }
+
+  if (monthListElement && monthListElement.children.length === 0) {
+    const emptyMessage = document.createElement("li");
+    emptyMessage.className = "empty-state";
+    emptyMessage.textContent = t("emptyState");
+    monthListElement.appendChild(emptyMessage);
+  }
+
+  try {
+    window.localStorage.setItem(LANGUAGE_STORAGE_KEY, currentLanguage);
+  } catch (error) {
+    console.warn("Language preference could not be saved:", error);
+  }
+};
 
 const pastelColors = [
   "#F7D8D8",
@@ -25,7 +239,10 @@ const pastelColors = [
   "#D9EAFD"
 ];
 
-let currentCells = Array(16).fill("");
+const STORAGE_KEY = "month-bingo-boards-v1";
+const defaultCells = () => Array(16).fill("");
+let storageMode = "local";
+let currentCells = defaultCells();
 let currentBoardId = null;
 
 const todayMonth = () => new Date().toISOString().slice(0, 7);
@@ -37,13 +254,107 @@ const formatMonthLabel = (monthValue) => {
 
   const [year, month] = monthValue.split("-");
   const date = new Date(Number(year), Number(month) - 1, 1);
-  return new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat(getLanguageTag(), { month: "long", year: "numeric" }).format(date);
 };
 
 const setStatus = (message, isError = false) => {
   statusElement.textContent = message;
   statusElement.style.color = isError ? "#a14444" : "#6f6a82";
 };
+
+const sameBoardId = (left, right) => String(left) === String(right);
+
+const getLocalBoards = () => {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .filter((board) => board && typeof board.month === "string")
+      .map((board) => ({
+        ...board,
+        id: board.id ?? `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        cells: Array.isArray(board.cells) && board.cells.length === 16 ? board.cells.slice() : defaultCells()
+      }));
+  } catch (error) {
+    console.warn("Lokaler Speicher konnte nicht gelesen werden:", error);
+    return [];
+  }
+};
+
+const persistLocalBoards = (boards) => {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(boards));
+  } catch (error) {
+    console.warn("Lokaler Speicher konnte nicht geschrieben werden:", error);
+  }
+};
+
+const normalizeBoardSnapshot = (board) => ({
+  id: board && board.id !== undefined && board.id !== null ? board.id : `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+  month: board && typeof board.month === "string" ? board.month : todayMonth(),
+  cells: Array.isArray(board && board.cells) && board.cells.length === 16 ? board.cells.slice() : defaultCells()
+});
+
+const syncLocalBackupFromServer = (serverBoards) => {
+  if (!Array.isArray(serverBoards)) {
+    return;
+  }
+
+  const localBoards = getLocalBoards();
+  const merged = [...localBoards];
+
+  serverBoards.forEach((board) => {
+    const normalizedBoard = normalizeBoardSnapshot(board);
+    const existingIndex = merged.findIndex((entry) => sameBoardId(entry.id, normalizedBoard.id));
+
+    if (existingIndex >= 0) {
+      merged[existingIndex] = normalizedBoard;
+      return;
+    }
+
+    merged.push(normalizedBoard);
+  });
+
+  persistLocalBoards(merged);
+};
+
+const isServerModeEnabled = (settings) => {
+  if (!settings || typeof settings !== "object") {
+    return false;
+  }
+
+  return settings.serverMode === true || String(settings.serverMode).toLowerCase() === "true";
+};
+
+async function loadAppSettings() {
+  try {
+    const response = await fetch("/appsettings.json", { cache: "no-store" });
+    if (!response.ok) {
+      return { serverMode: false, defaultLanguage: DEFAULT_LANGUAGE };
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.info("No appsettings.json found, using local storage.", error);
+    return { serverMode: false, defaultLanguage: DEFAULT_LANGUAGE };
+  }
+}
+
+async function initializeStorageMode() {
+  const settings = await loadAppSettings();
+  storageMode = isServerModeEnabled(settings) ? "server" : "local";
+  const defaultLanguage = getDefaultLanguageFromSettings(settings);
+  currentLanguage = getStoredLanguage() || defaultLanguage;
+  applyLanguage();
+}
 
 function renderBoard() {
   boardElement.innerHTML = "";
@@ -73,13 +384,35 @@ function renderBoard() {
 
 async function deleteBoard(boardId, monthId) {
   const label = formatMonthLabel(monthId);
-  const confirmed = window.confirm(`Board für ${label} wirklich löschen?`);
+  const confirmed = window.confirm(t("boardDeleteConfirm", { label }));
 
   if (!confirmed) {
     return;
   }
 
   try {
+    if (storageMode === "local") {
+      const boards = getLocalBoards().filter((board) => !sameBoardId(board.id, boardId));
+      persistLocalBoards(boards);
+
+      if (sameBoardId(currentBoardId, boardId)) {
+        const freshMonth = todayMonth();
+        monthInput.value = freshMonth;
+        currentBoardId = null;
+        currentCells = defaultCells();
+        renderBoard();
+        setStatus(t("boardDeleteSuccessFresh", { label, freshLabel: formatMonthLabel(freshMonth) }));
+      } else {
+        setStatus(t("boardDeleteSuccess", { label }));
+      }
+
+      await loadMonthList();
+      if (monthInput.value === todayMonth()) {
+        await loadBoard(monthInput.value);
+      }
+      return;
+    }
+
     const response = await fetch(`/api/board?id=${encodeURIComponent(boardId)}`, {
       method: "DELETE"
     });
@@ -87,26 +420,33 @@ async function deleteBoard(boardId, monthId) {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || "Löschen fehlgeschlagen.");
+      throw new Error(data.message || t("boardDeleteError"));
     }
 
-    if (currentBoardId === boardId) {
+    if (sameBoardId(currentBoardId, boardId)) {
       const freshMonth = todayMonth();
       monthInput.value = freshMonth;
       currentBoardId = null;
-      currentCells = Array(16).fill("");
+      currentCells = defaultCells();
       renderBoard();
-      setStatus(`Board für ${label} gelöscht. Neues Board für ${formatMonthLabel(freshMonth)} vorbereitet.`);
+      setStatus(t("boardDeleteSuccessFresh", { label, freshLabel: formatMonthLabel(freshMonth) }));
     } else {
-      setStatus(`Board für ${label} gelöscht.`);
+      setStatus(t("boardDeleteSuccess", { label }));
     }
 
+    const boards = getLocalBoards().filter((board) => !sameBoardId(board.id, boardId));
+    persistLocalBoards(boards);
     await loadMonthList();
     if (monthInput.value === todayMonth()) {
       await loadBoard(monthInput.value);
     }
   } catch (error) {
-    setStatus(error.message || "Löschen fehlgeschlagen.", true);
+    console.warn("Server-Löschung fehlgeschlagen, lokale Kopie wird angepasst:", error);
+    storageMode = "local";
+    const boards = getLocalBoards().filter((board) => !sameBoardId(board.id, boardId));
+    persistLocalBoards(boards);
+    setStatus(t("deleteFallback"), true);
+    await loadMonthList();
   }
 }
 
@@ -116,7 +456,7 @@ function updateMonthList(boards) {
   if (!boards.length) {
     const item = document.createElement("li");
     item.className = "empty-state";
-    item.textContent = "Noch keine Boards.";
+    item.textContent = t("emptyState");
     monthListElement.appendChild(item);
     return;
   }
@@ -134,9 +474,9 @@ function updateMonthList(boards) {
     const button = document.createElement("button");
     button.type = "button";
     const boardCount = grouped[board.month].length;
-    const boardIndex = grouped[board.month].findIndex((entry) => entry.id === board.id) + 1;
+    const boardIndex = grouped[board.month].findIndex((entry) => sameBoardId(entry.id, board.id)) + 1;
     button.textContent = boardCount > 1 ? `${formatMonthLabel(board.month)} • Board ${boardIndex}` : formatMonthLabel(board.month);
-    if (board.id === currentBoardId) {
+    if (sameBoardId(board.id, currentBoardId)) {
       button.classList.add("active");
     }
 
@@ -148,8 +488,8 @@ function updateMonthList(boards) {
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "delete-button";
-    deleteButton.textContent = "Löschen";
-    deleteButton.title = `Board für ${formatMonthLabel(board.month)} löschen`;
+    deleteButton.textContent = t("deleteAction");
+    deleteButton.title = t("boardDeleteTitle", { label: formatMonthLabel(board.month) });
     deleteButton.addEventListener("click", (event) => {
       event.stopPropagation();
       deleteBoard(board.id, board.month);
@@ -163,11 +503,23 @@ function updateMonthList(boards) {
 
 async function loadMonthList() {
   try {
+    if (storageMode === "local") {
+      const boards = getLocalBoards().sort((a, b) => {
+        if (a.month === b.month) {
+          return String(a.id).localeCompare(String(b.id));
+        }
+        return b.month.localeCompare(a.month);
+      });
+
+      updateMonthList(boards);
+      return;
+    }
+
     const response = await fetch("/api/boards");
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || "Monatsübersicht konnte nicht geladen werden.");
+      throw new Error(data.message || t("loadMonthListError"));
     }
 
     const boards = Array.isArray(data.boards)
@@ -179,14 +531,47 @@ async function loadMonthList() {
         })
       : [];
 
+    syncLocalBackupFromServer(boards);
     updateMonthList(boards);
   } catch (error) {
-    setStatus(error.message || "Monatsübersicht konnte nicht geladen werden.", true);
+    console.warn("Server nicht erreichbar, verwende lokale Daten:", error);
+    storageMode = "local";
+    const boards = getLocalBoards().sort((a, b) => {
+      if (a.month === b.month) {
+        return String(a.id).localeCompare(String(b.id));
+      }
+      return b.month.localeCompare(a.month);
+    });
+    updateMonthList(boards);
+    setStatus(t("serverFallback"), true);
   }
 }
 
 async function loadBoard(month, boardId = null) {
   try {
+    if (storageMode === "local") {
+      const boards = getLocalBoards();
+      const board = boardId !== null && boardId !== undefined
+        ? boards.find((entry) => sameBoardId(entry.id, boardId))
+        : boards.find((entry) => entry.month === month);
+
+      if (!board) {
+        currentBoardId = null;
+        currentCells = defaultCells();
+        renderBoard();
+        setStatus(t("boardLoadFailure", { label: formatMonthLabel(month) }));
+        await loadMonthList();
+        return;
+      }
+
+      currentBoardId = board.id;
+      currentCells = Array.isArray(board.cells) && board.cells.length === 16 ? board.cells.slice() : defaultCells();
+      renderBoard();
+      setStatus(t("boardLoaded", { label: formatMonthLabel(month) }));
+      await loadMonthList();
+      return;
+    }
+
     const query = new URLSearchParams();
     if (boardId !== null && boardId !== undefined) {
       query.set("id", String(boardId));
@@ -198,19 +583,37 @@ async function loadBoard(month, boardId = null) {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || "Board konnte nicht geladen werden.");
+      throw new Error(data.message || t("loadBoardError"));
     }
 
     currentBoardId = data.id ?? null;
-    currentCells = Array.isArray(data.cells) && data.cells.length === 16 ? data.cells : Array(16).fill("");
+    currentCells = Array.isArray(data.cells) && data.cells.length === 16 ? data.cells : defaultCells();
+    syncLocalBackupFromServer([{ id: currentBoardId, month, cells: currentCells }]);
     renderBoard();
-    setStatus(`Board für ${formatMonthLabel(month)} geladen`);
+    setStatus(t("boardLoadedServer", { label: formatMonthLabel(month) }));
     await loadMonthList();
   } catch (error) {
-    currentBoardId = null;
-    currentCells = Array(16).fill("");
+    console.warn("Server nicht erreichbar, verwende lokale Board-Version:", error);
+    storageMode = "local";
+    const boards = getLocalBoards();
+    const board = boardId !== null && boardId !== undefined
+      ? boards.find((entry) => sameBoardId(entry.id, boardId))
+      : boards.find((entry) => entry.month === month);
+
+    if (!board) {
+      currentBoardId = null;
+      currentCells = defaultCells();
+      renderBoard();
+      setStatus(t("serverFallbackMissing", { label: formatMonthLabel(month) }), true);
+      await loadMonthList();
+      return;
+    }
+
+    currentBoardId = board.id;
+    currentCells = Array.isArray(board.cells) && board.cells.length === 16 ? board.cells.slice() : defaultCells();
     renderBoard();
-    setStatus(error.message || "Fehler beim Laden des Boards.", true);
+    setStatus(t("serverFallback"), true);
+    await loadMonthList();
   }
 }
 
@@ -218,11 +621,36 @@ async function saveBoard() {
   const month = monthInput.value;
 
   if (!month) {
-    setStatus("Bitte wähle zuerst einen Monat aus.", true);
+    setStatus(t("selectMonth"), true);
     return;
   }
 
   try {
+    if (storageMode === "local") {
+      const boards = getLocalBoards();
+      const existingIndex = currentBoardId === null
+        ? -1
+        : boards.findIndex((board) => sameBoardId(board.id, currentBoardId));
+
+      const persistedBoard = {
+        id: existingIndex >= 0 ? boards[existingIndex].id : `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        month,
+        cells: currentCells.slice()
+      };
+
+      if (existingIndex >= 0) {
+        boards[existingIndex] = persistedBoard;
+      } else {
+        boards.push(persistedBoard);
+      }
+
+      persistLocalBoards(boards);
+      currentBoardId = persistedBoard.id;
+      setStatus(t("saveSuccessLocal", { label: formatMonthLabel(month) }));
+      await loadMonthList();
+      return;
+    }
+
     const response = await fetch("/api/board", {
       method: "POST",
       headers: {
@@ -234,14 +662,38 @@ async function saveBoard() {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || "Speichern fehlgeschlagen.");
+      throw new Error(data.message || t("saveError"));
     }
 
     currentBoardId = data.id ?? currentBoardId;
-    setStatus(`Erfolgreich gespeichert für ${formatMonthLabel(month)}`);
+    syncLocalBackupFromServer([{ id: currentBoardId, month, cells: currentCells }]);
+    setStatus(t("saveSuccess", { label: formatMonthLabel(month) }));
     await loadMonthList();
   } catch (error) {
-    setStatus(error.message || "Speichern fehlgeschlagen.", true);
+    console.warn("Server speichern fehlgeschlagen, lokale Kopie wird angelegt:", error);
+    storageMode = "local";
+
+    const boards = getLocalBoards();
+    const existingIndex = currentBoardId === null
+      ? -1
+      : boards.findIndex((board) => sameBoardId(board.id, currentBoardId));
+
+    const persistedBoard = {
+      id: existingIndex >= 0 ? boards[existingIndex].id : `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      month,
+      cells: currentCells.slice()
+    };
+
+    if (existingIndex >= 0) {
+      boards[existingIndex] = persistedBoard;
+    } else {
+      boards.push(persistedBoard);
+    }
+
+    persistLocalBoards(boards);
+    currentBoardId = persistedBoard.id;
+    setStatus(t("saveFallback"), true);
+    await loadMonthList();
   }
 }
 
@@ -250,38 +702,167 @@ async function createNewBoard() {
   monthInput.value = month;
 
   try {
+    if (storageMode === "local") {
+      const boards = getLocalBoards();
+      const newBoard = {
+        id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        month,
+        cells: defaultCells()
+      };
+
+      boards.push(newBoard);
+      persistLocalBoards(boards);
+      currentBoardId = newBoard.id;
+      currentCells = newBoard.cells.slice();
+      renderBoard();
+      setStatus(t("newBoardLocal", { label: formatMonthLabel(month) }));
+      await loadMonthList();
+      return;
+    }
+
     const response = await fetch("/api/board", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ month, cells: Array(16).fill("") })
+      body: JSON.stringify({ month, cells: defaultCells() })
     });
-
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || "Neues Board konnte nicht erstellt werden.");
+      throw new Error(data.message || t("createBoardError"));
     }
 
     currentBoardId = data.id ?? null;
-    currentCells = Array.isArray(data.cells) && data.cells.length === 16 ? data.cells : Array(16).fill("");
+    currentCells = Array.isArray(data.cells) && data.cells.length === 16 ? data.cells : defaultCells();
+    syncLocalBackupFromServer([{ id: currentBoardId, month, cells: currentCells }]);
     renderBoard();
-    setStatus(`Neues zusätzliches Board für ${formatMonthLabel(month)} erstellt`);
+    setStatus(t("newBoardServer", { label: formatMonthLabel(month) }));
     await loadMonthList();
   } catch (error) {
-    setStatus(error.message || "Neues Board konnte nicht erstellt werden.", true);
+    console.warn("Server-Board konnte nicht erstellt werden, lokale Kopie wird angelegt:", error);
+    storageMode = "local";
+    const boards = getLocalBoards();
+    const newBoard = {
+      id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      month,
+      cells: defaultCells()
+    };
+
+    boards.push(newBoard);
+    persistLocalBoards(boards);
+    currentBoardId = newBoard.id;
+    currentCells = newBoard.cells.slice();
+    renderBoard();
+    setStatus(t("newBoardLocalFallback"), true);
+    await loadMonthList();
   }
 }
+
+const handleInstallClick = async () => {
+  if (!deferredInstallPrompt) {
+    setStatus(t("installBlocked"), true);
+    return;
+  }
+
+  try {
+    deferredInstallPrompt.prompt();
+    const choice = await deferredInstallPrompt.userChoice;
+
+    if (choice.outcome === "accepted") {
+      setStatus(t("installAccepted"));
+    } else {
+      setStatus(t("installCancelled"));
+    }
+
+    deferredInstallPrompt = null;
+    installButton.hidden = true;
+  } catch (error) {
+    console.warn("Installation konnte nicht gestartet werden:", error);
+    setStatus(t("installFailed"), true);
+  }
+};
+
+const showInstallPrompt = () => {
+  if (!installPrompt || installPromptDismissed) {
+    return;
+  }
+
+  if (window.matchMedia("(display-mode: standalone)").matches) {
+    installPrompt.hidden = true;
+    installPrompt.style.display = "none";
+    return;
+  }
+
+  installPrompt.hidden = false;
+  installPrompt.style.display = "flex";
+};
+
+const hideInstallPrompt = () => {
+  if (!installPrompt) {
+    return;
+  }
+
+  installPrompt.hidden = true;
+  installPrompt.style.display = "none";
+};
+
+const enableInstallButton = () => {
+  if (!installButton) {
+    return;
+  }
+
+  if (window.matchMedia("(display-mode: standalone)").matches) {
+    installButton.hidden = true;
+    return;
+  }
+
+  installButton.hidden = false;
+};
+
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  enableInstallButton();
+  showInstallPrompt();
+});
+
+window.addEventListener("appinstalled", () => {
+  deferredInstallPrompt = null;
+  if (installButton) {
+    installButton.hidden = true;
+  }
+  hideInstallPrompt();
+  setStatus(t("appInstalled"));
+});
 
 monthInput.value = todayMonth();
 monthInput.addEventListener("change", () => {
   currentBoardId = null;
   loadBoard(monthInput.value);
 });
+languageSelect?.addEventListener("change", async (event) => {
+  currentLanguage = event.target.value === "en" ? "en" : "de";
+  applyLanguage();
+  await loadMonthList();
+  if (monthInput.value) {
+    await loadBoard(monthInput.value);
+  }
+});
 saveButton.addEventListener("click", saveBoard);
 newBoardButton.addEventListener("click", createNewBoard);
 printButton.addEventListener("click", () => window.print());
+installButton?.addEventListener("click", handleInstallClick);
+installPromptAction?.addEventListener("click", handleInstallClick);
+installPromptDismiss?.addEventListener("click", (event) => {
+  event.preventDefault();
+  event.stopPropagation();
+  installPromptDismissed = true;
+  hideInstallPrompt();
+});
 
-loadMonthList();
-loadBoard(monthInput.value);
+(async () => {
+  await initializeStorageMode();
+  await loadMonthList();
+  await loadBoard(monthInput.value);
+})();

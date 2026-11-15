@@ -4,39 +4,57 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#8a7df9" />
-    <meta name="description" content="Monatsbingo mit 16 Feldern und lokaler Speicherung." />
-    <title>Monatsbingo</title>
+    <meta name="description" content="Month Bingo with 16 cells and local storage." />
+    <title>Month Bingo</title>
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/icon.svg" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <div id="installPrompt" class="install-prompt" hidden>
+      <div class="install-prompt__icon" aria-hidden="true">⬇</div>
+      <div class="install-prompt__content">
+        <strong>Install Month Bingo</strong>
+        <span>Save the app to your home screen and use it like a regular app.</span>
+      </div>
+      <div class="install-prompt__actions">
+        <button id="installPromptAction" type="button">Install</button>
+        <button id="installPromptDismiss" type="button" class="ghost">Later</button>
+      </div>
+    </div>
+
     <div class="layout">
       <aside class="sidebar">
-        <p class="eyebrow">Monatsübersicht</p>
-        <h2>Gespeicherte Boards</h2>
+        <p class="eyebrow">Monthly overview</p>
+        <h2>Saved boards</h2>
         <ul id="monthList" class="month-list" aria-live="polite"></ul>
       </aside>
 
       <main class="app-shell">
         <header class="topbar">
           <div>
-            <p class="eyebrow">Monatsplaner</p>
-            <h1>Monatsbingo</h1>
+            <p class="eyebrow">Monthly planner</p>
+            <h1>Month Bingo</h1>
           </div>
           <div class="toolbar">
-            <label for="monthInput">Monat</label>
+            <label id="monthLabel" for="monthInput">Month</label>
             <input id="monthInput" type="month" />
-            <button id="newBoardButton" type="button" class="secondary">Neu</button>
-            <button id="saveButton" type="button">Speichern</button>
-            <button id="printButton" type="button" class="ghost">Drucken / PDF</button>
+            <label id="languageLabel" for="languageSelect">Language</label>
+            <select id="languageSelect" aria-label="Language selector">
+              <option value="de">Deutsch</option>
+              <option value="en">English</option>
+            </select>
+            <button id="newBoardButton" type="button" class="secondary">New</button>
+            <button id="saveButton" type="button">Save</button>
+            <button id="installButton" type="button" class="install-button" hidden>Install app</button>
+            <button id="printButton" type="button" class="ghost">Print / PDF</button>
           </div>
         </header>
 
         <p id="status" class="status" aria-live="polite"></p>
 
-        <section id="board" class="board" aria-label="Bingo-Felder"></section>
+        <section id="board" class="board" aria-label="Bingo cells"></section>
       </main>
     </div>
 

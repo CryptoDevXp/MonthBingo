@@ -176,6 +176,69 @@ button.ghost {
   box-shadow: none;
 }
 
+button.install-button {
+  background: linear-gradient(135deg, #5f9dff 0%, #7b78ff 100%);
+  box-shadow: 0 10px 22px rgba(95, 157, 255, 0.28);
+}
+
+.install-prompt {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 440px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(124, 109, 240, 0.18);
+  border-radius: 18px;
+  padding: 14px 16px;
+  box-shadow: 0 18px 38px rgba(63, 52, 120, 0.16);
+  backdrop-filter: blur(12px);
+}
+
+.install-prompt__icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #8a7df9 0%, #b889eb 100%);
+  color: #fff;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.install-prompt__content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.install-prompt__content strong {
+  font-size: 0.98rem;
+}
+
+.install-prompt__content span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.install-prompt__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.install-prompt__actions button {
+  padding: 9px 12px;
+  font-size: 0.82rem;
+}
+
 .status {
   min-height: 24px;
   margin: 0 0 18px;
