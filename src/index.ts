@@ -4,6 +4,7 @@ import path from "path";
 import sqlite3 from "sqlite3";
 
 import { getUserIdFromRequest } from "./user-store";
+import { isServerModeEnabled, loadRuntimeSettings } from "./runtime-config";
 
 declare global {
   namespace Express {
@@ -16,17 +17,31 @@ declare global {
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
 const projectRoot = path.resolve(process.cwd());
+const runtimeSettings = loadRuntimeSettings(projectRoot);
+const serverModeEnabled = isServerModeEnabled(runtimeSettings);
 const dataDir = path.join(projectRoot, "data");
 const dbPath = path.join(dataDir, "month-bingo.db");
 const publicDir = path.join(projectRoot, "public");
 
-fs.mkdirSync(dataDir, { recursive: true });
+let db: sqlite3.Database | null = null;
 
-const db = new sqlite3.Database(dbPath);
+const getDatabase = () => {
+  if (!serverModeEnabled) {
+    throw new Error("Database access is disabled because server mode is off.");
+  }
+
+  if (!db) {
+    fs.mkdirSync(dataDir, { recursive: true });
+    db = new sqlite3.Database(dbPath);
+  }
+
+  return db;
+};
 
 const run = (sql: string, params: unknown[] = []): Promise<number> =>
   new Promise((resolve, reject) => {
-    db.run(sql, params, function (error) {
+    const database = getDatabase();
+    database.run(sql, params, function (error) {
       if (error) {
         reject(error);
         return;
@@ -37,7 +52,8 @@ const run = (sql: string, params: unknown[] = []): Promise<number> =>
 
 const get = <T>(sql: string, params: unknown[] = []): Promise<T | undefined> =>
   new Promise((resolve, reject) => {
-    db.get(sql, params, (error, row) => {
+    const database = getDatabase();
+    database.get(sql, params, (error, row) => {
       if (error) {
         reject(error);
         return;
@@ -48,7 +64,8 @@ const get = <T>(sql: string, params: unknown[] = []): Promise<T | undefined> =>
 
 const all = <T>(sql: string, params: unknown[] = []): Promise<T[]> =>
   new Promise((resolve, reject) => {
-    db.all(sql, params, (error, rows) => {
+    const database = getDatabase();
+    database.all(sql, params, (error, rows) => {
       if (error) {
         reject(error);
         return;
@@ -133,7 +150,9 @@ async function initDatabase() {
 app.use(express.json({ limit: "1mb" }));
 app.use(async (req, res, next) => {
   try {
-    await ensureDatabaseReady();
+    if (serverModeEnabled) {
+      await ensureDatabaseReady();
+    }
     req.userId = getUserIdFromRequest(req, res);
     next();
   } catch (error) {
@@ -147,6 +166,11 @@ app.get("/appsettings.json", (_, res) => {
 });
 
 app.get("/api/boards", async (req, res) => {
+  if (!serverModeEnabled) {
+    res.status(503).json({ message: "Server mode is disabled. Use local mode in the browser." });
+    return;
+  }
+
   try {
     const userId = req.userId ?? getUserIdFromRequest(req, res);
     const rows = await all<{ id: number; month: string; cells: string }>(
@@ -169,6 +193,11 @@ app.get("/api/boards", async (req, res) => {
 });
 
 app.get("/api/board", async (req, res) => {
+  if (!serverModeEnabled) {
+    res.status(503).json({ message: "Server mode is disabled. Use local mode in the browser." });
+    return;
+  }
+
   const userId = req.userId ?? getUserIdFromRequest(req, res);
   const id = typeof req.query.id === "string" ? Number(req.query.id) : undefined;
   const month = typeof req.query.month === "string" ? req.query.month : new Date().toISOString().slice(0, 7);
@@ -197,6 +226,11 @@ app.get("/api/board", async (req, res) => {
 });
 
 app.post("/api/board", async (req, res) => {
+  if (!serverModeEnabled) {
+    res.status(503).json({ message: "Server mode is disabled. Use local mode in the browser." });
+    return;
+  }
+
   const userId = req.userId ?? getUserIdFromRequest(req, res);
   const { id, month, cells } = req.body as { id?: number | string; month?: string; cells?: unknown };
 
@@ -227,6 +261,11 @@ app.post("/api/board", async (req, res) => {
 });
 
 app.delete("/api/board", async (req, res) => {
+  if (!serverModeEnabled) {
+    res.status(503).json({ message: "Server mode is disabled. Use local mode in the browser." });
+    return;
+  }
+
   const userId = req.userId ?? getUserIdFromRequest(req, res);
   const id = typeof req.query.id === "string" ? Number(req.query.id) : undefined;
   const month = typeof req.query.month === "string" ? req.query.month : undefined;
@@ -255,7 +294,9 @@ export default app;
 if (!process.env.VERCEL) {
   (async () => {
     try {
-      await ensureDatabaseReady();
+      if (serverModeEnabled) {
+        await ensureDatabaseReady();
+      }
       app.listen(port, () => {
         console.log(`Month Bingo app is running at http://localhost:${port}`);
       });
