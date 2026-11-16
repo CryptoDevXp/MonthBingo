@@ -12,6 +12,7 @@ const installPromptDismiss = document.getElementById("installPromptDismiss");
 const languageSelect = document.getElementById("languageSelect");
 const monthLabel = document.getElementById("monthLabel");
 const languageLabel = document.getElementById("languageLabel");
+const serverModeBadge = document.getElementById("serverModeBadge");
 
 let deferredInstallPrompt = null;
 let installPromptDismissed = false;
@@ -27,6 +28,7 @@ const translations = {
     save: "Speichern",
     installApp: "App installieren",
     print: "Drucken / PDF",
+    serverModeBadge: "Server-Modus aktiv",
     savedBoards: "Gespeicherte Boards",
     monthlyOverview: "Monatsübersicht",
     monthlyPlanner: "Monatsplaner",
@@ -71,6 +73,7 @@ const translations = {
     save: "Save",
     installApp: "Install app",
     print: "Print / PDF",
+    serverModeBadge: "Server mode active",
     savedBoards: "Saved boards",
     monthlyOverview: "Monthly overview",
     monthlyPlanner: "Monthly planner",
@@ -178,6 +181,11 @@ const applyLanguage = () => {
 
   if (installButton) {
     installButton.textContent = t("installApp");
+  }
+
+  if (serverModeBadge) {
+    serverModeBadge.textContent = t("serverModeBadge");
+    serverModeBadge.hidden = storageMode !== "server";
   }
 
   if (printButton) {
@@ -354,7 +362,22 @@ async function initializeStorageMode() {
   const defaultLanguage = getDefaultLanguageFromSettings(settings);
   currentLanguage = getStoredLanguage() || defaultLanguage;
   applyLanguage();
+
+  if (storageMode === "server") {
+    installPromptDismissed = true;
+    if (installButton) {
+      installButton.hidden = true;
+    }
+    hideInstallPrompt();
+  }
+
+  if (serverModeBadge) {
+    serverModeBadge.hidden = storageMode !== "server";
+    serverModeBadge.textContent = t("serverModeBadge");
+  }
 }
+
+const shouldHideInstallUi = () => storageMode === "server" || window.matchMedia("(display-mode: standalone)").matches;
 
 function renderBoard() {
   boardElement.innerHTML = "";
@@ -784,13 +807,7 @@ const handleInstallClick = async () => {
 };
 
 const showInstallPrompt = () => {
-  if (!installPrompt || installPromptDismissed) {
-    return;
-  }
-
-  if (window.matchMedia("(display-mode: standalone)").matches) {
-    installPrompt.hidden = true;
-    installPrompt.style.display = "none";
+  if (!installPrompt || installPromptDismissed || shouldHideInstallUi()) {
     return;
   }
 
@@ -812,7 +829,7 @@ const enableInstallButton = () => {
     return;
   }
 
-  if (window.matchMedia("(display-mode: standalone)").matches) {
+  if (shouldHideInstallUi()) {
     installButton.hidden = true;
     return;
   }
@@ -821,6 +838,16 @@ const enableInstallButton = () => {
 };
 
 window.addEventListener("beforeinstallprompt", (event) => {
+  if (storageMode === "server") {
+    event.preventDefault();
+    deferredInstallPrompt = null;
+    hideInstallPrompt();
+    if (installButton) {
+      installButton.hidden = true;
+    }
+    return;
+  }
+
   event.preventDefault();
   deferredInstallPrompt = event;
   enableInstallButton();

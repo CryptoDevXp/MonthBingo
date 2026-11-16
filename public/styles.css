@@ -246,6 +246,21 @@ button.install-button {
   font-weight: 600;
 }
 
+.server-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(86, 160, 115, 0.12);
+  border: 1px solid rgba(86, 160, 115, 0.22);
+  color: #246b45;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .board {
   display: grid;
   grid-template-columns: repeat(4, minmax(140px, 1fr));
