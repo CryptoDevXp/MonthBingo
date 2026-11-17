@@ -176,6 +176,13 @@ button.ghost {
   box-shadow: none;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid rgba(124, 109, 240, 0.28);
+  outline-offset: 2px;
+}
+
 button.install-button {
   background: linear-gradient(135deg, #5f9dff 0%, #7b78ff 100%);
   box-shadow: 0 10px 22px rgba(95, 157, 255, 0.28);

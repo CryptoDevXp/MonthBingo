@@ -5,6 +5,9 @@ const saveButton = document.getElementById("saveButton");
 const monthListElement = document.getElementById("monthList");
 const newBoardButton = document.getElementById("newBoardButton");
 const printButton = document.getElementById("printButton");
+const exportButton = document.getElementById("exportButton");
+const importButton = document.getElementById("importButton");
+const importFileInput = document.getElementById("importFileInput");
 const installButton = document.getElementById("installButton");
 const installPrompt = document.getElementById("installPrompt");
 const installPromptAction = document.getElementById("installPromptAction");
@@ -28,6 +31,14 @@ const translations = {
     save: "Speichern",
     installApp: "App installieren",
     print: "Drucken / PDF",
+    exportData: "Exportieren",
+    importData: "Importieren",
+    exportSuccess: "Boards erfolgreich exportiert.",
+    importSuccess: "Boards erfolgreich importiert.",
+    importError: "Importdatei ist ungültig oder beschädigt.",
+    noImportFile: "Keine Datei zum Import ausgewählt.",
+    importReplaceConfirm: "Es gibt {count} bereits vorhandene Board(s). Überschreiben?",
+    importCancelled: "Import abgebrochen.",
     serverModeBadge: "Server-Modus aktiv",
     savedBoards: "Gespeicherte Boards",
     monthlyOverview: "Monatsübersicht",
@@ -73,6 +84,14 @@ const translations = {
     save: "Save",
     installApp: "Install app",
     print: "Print / PDF",
+    exportData: "Export",
+    importData: "Import",
+    exportSuccess: "Boards exported successfully.",
+    importSuccess: "Boards imported successfully.",
+    importError: "The import file is invalid or corrupted.",
+    noImportFile: "No file selected for import.",
+    importReplaceConfirm: "There are {count} existing board(s). Replace them?",
+    importCancelled: "Import cancelled.",
     serverModeBadge: "Server mode active",
     savedBoards: "Saved boards",
     monthlyOverview: "Monthly overview",
@@ -186,6 +205,14 @@ const applyLanguage = () => {
   if (serverModeBadge) {
     serverModeBadge.textContent = t("serverModeBadge");
     serverModeBadge.hidden = storageMode !== "server";
+  }
+
+  if (exportButton) {
+    exportButton.textContent = t("exportData");
+  }
+
+  if (importButton) {
+    importButton.textContent = t("importData");
   }
 
   if (printButton) {
@@ -305,6 +332,30 @@ const persistLocalBoards = (boards) => {
   }
 };
 
+const normalizeImportedBoards = (rawBoards) => {
+  if (!Array.isArray(rawBoards)) {
+    return [];
+  }
+
+  return rawBoards
+    .map((board) => {
+      if (!board || typeof board !== "object" || typeof board.month !== "string") {
+        return null;
+      }
+
+      const cells = Array.isArray(board.cells) && board.cells.length === 16
+        ? board.cells.map((cell) => (typeof cell === "string" ? cell : ""))
+        : defaultCells();
+
+      return {
+        id: board.id !== undefined && board.id !== null ? String(board.id) : `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        month: board.month,
+        cells
+      };
+    })
+    .filter(Boolean);
+};
+
 const normalizeBoardSnapshot = (board) => ({
   id: board && board.id !== undefined && board.id !== null ? board.id : `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
   month: board && typeof board.month === "string" ? board.month : todayMonth(),
@@ -334,13 +385,15 @@ const syncLocalBackupFromServer = (serverBoards) => {
   persistLocalBoards(merged);
 };
 
-const isServerModeEnabled = (settings) => {
+const isServerModeActive = (settings) => {
   if (!settings || typeof settings !== "object") {
     return false;
   }
 
   return settings.serverMode === true || String(settings.serverMode).toLowerCase() === "true";
 };
+
+const getStorageModeFromSettings = (settings) => (isServerModeActive(settings) ? "server" : "local");
 
 async function loadAppSettings() {
   try {
@@ -358,7 +411,7 @@ async function loadAppSettings() {
 
 async function initializeStorageMode() {
   const settings = await loadAppSettings();
-  storageMode = isServerModeEnabled(settings) ? "server" : "local";
+  storageMode = getStorageModeFromSettings(settings);
   const defaultLanguage = getDefaultLanguageFromSettings(settings);
   currentLanguage = getStoredLanguage() || defaultLanguage;
   applyLanguage();
@@ -377,7 +430,83 @@ async function initializeStorageMode() {
   }
 }
 
-const shouldHideInstallUi = () => storageMode === "server" || window.matchMedia("(display-mode: standalone)").matches;
+const shouldHideInstallUi = () => getStorageModeFromSettings({ serverMode: storageMode === "server" }) === "server" || window.matchMedia("(display-mode: standalone)").matches;
+
+const exportBoardData = () => {
+  const boards = getLocalBoards();
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    boards
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `month-bingo-export-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  setStatus(t("exportSuccess"));
+};
+
+const getImportConflictCount = (importedBoards) => {
+  const localBoards = getLocalBoards();
+  return importedBoards.filter((board) => localBoards.some((entry) => sameBoardId(entry.id, board.id))).length;
+};
+
+const importBoardData = async (event) => {
+  const file = event.target.files && event.target.files[0];
+  if (!file) {
+    setStatus(t("noImportFile"), true);
+    return;
+  }
+
+  try {
+    const rawText = await file.text();
+    const parsed = JSON.parse(rawText);
+    const rawBoards = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.boards) ? parsed.boards : null;
+
+    if (!rawBoards) {
+      throw new Error("Invalid import payload");
+    }
+
+    const importedBoards = normalizeImportedBoards(rawBoards);
+    if (!importedBoards.length) {
+      throw new Error("No valid boards found");
+    }
+
+    const conflictCount = getImportConflictCount(importedBoards);
+    if (conflictCount > 0 && !window.confirm(t("importReplaceConfirm", { count: conflictCount }))) {
+      setStatus(t("importCancelled"), true);
+      return;
+    }
+
+    const mergedBoards = [...getLocalBoards()];
+    importedBoards.forEach((board) => {
+      const existingIndex = mergedBoards.findIndex((entry) => sameBoardId(entry.id, board.id));
+      if (existingIndex >= 0) {
+        mergedBoards[existingIndex] = board;
+        return;
+      }
+      mergedBoards.push(board);
+    });
+
+    persistLocalBoards(mergedBoards);
+    setStatus(t("importSuccess"));
+    await loadMonthList();
+    if (monthInput.value) {
+      await loadBoard(monthInput.value);
+    }
+  } catch (error) {
+    console.warn("Import fehlgeschlagen:", error);
+    setStatus(t("importError"), true);
+  } finally {
+    event.target.value = "";
+  }
+};
 
 function renderBoard() {
   boardElement.innerHTML = "";
@@ -878,6 +1007,9 @@ languageSelect?.addEventListener("change", async (event) => {
 });
 saveButton.addEventListener("click", saveBoard);
 newBoardButton.addEventListener("click", createNewBoard);
+exportButton?.addEventListener("click", exportBoardData);
+importButton?.addEventListener("click", () => importFileInput?.click());
+importFileInput?.addEventListener("change", importBoardData);
 printButton.addEventListener("click", () => window.print());
 installButton?.addEventListener("click", handleInstallClick);
 installPromptAction?.addEventListener("click", handleInstallClick);
