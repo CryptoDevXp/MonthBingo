@@ -40,15 +40,16 @@
           <div class="toolbar">
             <label id="monthLabel" for="monthInput">Month</label>
             <input id="monthInput" type="month" />
-            <label id="languageLabel" for="languageSelect">Language</label>
-            <select id="languageSelect" aria-label="Language selector">
-              <option value="de">Deutsch</option>
-              <option value="en">English</option>
+            <select id="languageSelect" class="language-select" aria-label="Language selector" title="Language">
+              <option value="de">DE</option>
+              <option value="en">EN</option>
             </select>
             <button id="newBoardButton" type="button" class="secondary">New</button>
             <button id="saveButton" type="button">Save</button>
-            <button id="exportButton" type="button" class="ghost">Export</button>
-            <button id="importButton" type="button" class="ghost">Import</button>
+            <div class="action-pair">
+              <button id="exportButton" type="button" class="ghost">Export</button>
+              <button id="importButton" type="button" class="ghost">Import</button>
+            </div>
             <button id="installButton" type="button" class="install-button" hidden>Install app</button>
             <button id="printButton" type="button" class="ghost">Print / PDF</button>
             <div id="serverModeBadge" class="server-mode-badge" hidden>Server mode active</div>

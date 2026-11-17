@@ -4,7 +4,7 @@ import path from "path";
 import sqlite3 from "sqlite3";
 
 import { getUserIdFromRequest } from "./user-store";
-import { isServerModeEnabled, loadRuntimeSettings } from "./runtime-config";
+import { isPublicDatabaseMode, isServerModeEnabled, loadRuntimeSettings } from "./runtime-config";
 
 declare global {
   namespace Express {
@@ -22,6 +22,15 @@ const serverModeEnabled = isServerModeEnabled(runtimeSettings);
 const dataDir = path.join(projectRoot, "data");
 const dbPath = path.join(dataDir, "month-bingo.db");
 const publicDir = path.join(projectRoot, "public");
+const publicDatabaseMode = isPublicDatabaseMode(runtimeSettings);
+const privateDatabaseUserId = "private";
+
+const getBoardUserId = (req: express.Request, res: express.Response): string => {
+  if (!publicDatabaseMode) {
+    return privateDatabaseUserId;
+  }
+  return req.userId ?? getUserIdFromRequest(req, res);
+};
 
 let db: sqlite3.Database | null = null;
 
@@ -153,7 +162,9 @@ app.use(async (req, res, next) => {
     if (serverModeEnabled) {
       await ensureDatabaseReady();
     }
-    req.userId = getUserIdFromRequest(req, res);
+    req.userId = publicDatabaseMode
+      ? getUserIdFromRequest(req, res)
+      : privateDatabaseUserId;
     next();
   } catch (error) {
     next(error);
@@ -172,11 +183,15 @@ app.get("/api/boards", async (req, res) => {
   }
 
   try {
-    const userId = req.userId ?? getUserIdFromRequest(req, res);
-    const rows = await all<{ id: number; month: string; cells: string }>(
-      "SELECT id, month, cells FROM boards WHERE user_id = ? ORDER BY month DESC, id DESC",
-      [userId]
-    );
+    const userId = getBoardUserId(req, res);
+    const rows = publicDatabaseMode
+      ? await all<{ id: number; month: string; cells: string }>(
+          "SELECT id, month, cells FROM boards WHERE user_id = ? ORDER BY month DESC, id DESC",
+          [userId]
+        )
+      : await all<{ id: number; month: string; cells: string }>(
+          "SELECT id, month, cells FROM boards ORDER BY month DESC, id DESC"
+        );
 
     const boards = rows.map((row) => {
       try {
@@ -198,18 +213,22 @@ app.get("/api/board", async (req, res) => {
     return;
   }
 
-  const userId = req.userId ?? getUserIdFromRequest(req, res);
+  const userId = getBoardUserId(req, res);
   const id = typeof req.query.id === "string" ? Number(req.query.id) : undefined;
   const month = typeof req.query.month === "string" ? req.query.month : new Date().toISOString().slice(0, 7);
 
   const row = id
     ? ((await get<{ id: number; month: string; cells: string }>(
-        "SELECT id, month, cells FROM boards WHERE id = ? AND user_id = ?",
-        [id, userId]
+        publicDatabaseMode
+          ? "SELECT id, month, cells FROM boards WHERE id = ? AND user_id = ?"
+          : "SELECT id, month, cells FROM boards WHERE id = ?",
+        publicDatabaseMode ? [id, userId] : [id]
       )) as { id: number; month: string; cells: string } | undefined)
     : ((await get<{ id: number; month: string; cells: string }>(
-        "SELECT id, month, cells FROM boards WHERE user_id = ? AND month = ? ORDER BY id DESC LIMIT 1",
-        [userId, month]
+        publicDatabaseMode
+          ? "SELECT id, month, cells FROM boards WHERE user_id = ? AND month = ? ORDER BY id DESC LIMIT 1"
+          : "SELECT id, month, cells FROM boards WHERE month = ? ORDER BY id DESC LIMIT 1",
+        publicDatabaseMode ? [userId, month] : [month]
       )) as { id: number; month: string; cells: string } | undefined);
 
   if (!row) {
@@ -231,7 +250,7 @@ app.post("/api/board", async (req, res) => {
     return;
   }
 
-  const userId = req.userId ?? getUserIdFromRequest(req, res);
+  const userId = getBoardUserId(req, res);
   const { id, month, cells } = req.body as { id?: number | string; month?: string; cells?: unknown };
 
   if (typeof month !== "string" || !month) {
@@ -244,8 +263,12 @@ app.post("/api/board", async (req, res) => {
   if (id !== undefined && id !== null && id !== "") {
     const boardId = Number(id);
     await run(
-      "UPDATE boards SET cells = ?, updated_at = ? WHERE id = ? AND user_id = ?",
-      [JSON.stringify(normalizedCells), new Date().toISOString(), boardId, userId]
+      publicDatabaseMode
+        ? "UPDATE boards SET cells = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+        : "UPDATE boards SET cells = ?, updated_at = ? WHERE id = ?",
+      publicDatabaseMode
+        ? [JSON.stringify(normalizedCells), new Date().toISOString(), boardId, userId]
+        : [JSON.stringify(normalizedCells), new Date().toISOString(), boardId]
     );
 
     res.json({ id: boardId, month, cells: normalizedCells });
@@ -266,12 +289,17 @@ app.delete("/api/board", async (req, res) => {
     return;
   }
 
-  const userId = req.userId ?? getUserIdFromRequest(req, res);
+  const userId = getBoardUserId(req, res);
   const id = typeof req.query.id === "string" ? Number(req.query.id) : undefined;
   const month = typeof req.query.month === "string" ? req.query.month : undefined;
 
   if (id !== undefined && Number.isFinite(id)) {
-    await run("DELETE FROM boards WHERE id = ? AND user_id = ?", [id, userId]);
+    await run(
+      publicDatabaseMode
+        ? "DELETE FROM boards WHERE id = ? AND user_id = ?"
+        : "DELETE FROM boards WHERE id = ?",
+      publicDatabaseMode ? [id, userId] : [id]
+    );
     res.json({ id, deleted: true });
     return;
   }
@@ -281,7 +309,12 @@ app.delete("/api/board", async (req, res) => {
     return;
   }
 
-  await run("DELETE FROM boards WHERE user_id = ? AND month = ?", [userId, month]);
+  await run(
+    publicDatabaseMode
+      ? "DELETE FROM boards WHERE user_id = ? AND month = ?"
+      : "DELETE FROM boards WHERE month = ?",
+    publicDatabaseMode ? [userId, month] : [month]
+  );
   res.json({ month, deleted: true });
 });
 

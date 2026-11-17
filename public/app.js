@@ -14,7 +14,6 @@ const installPromptAction = document.getElementById("installPromptAction");
 const installPromptDismiss = document.getElementById("installPromptDismiss");
 const languageSelect = document.getElementById("languageSelect");
 const monthLabel = document.getElementById("monthLabel");
-const languageLabel = document.getElementById("languageLabel");
 const serverModeBadge = document.getElementById("serverModeBadge");
 
 let deferredInstallPrompt = null;
@@ -174,10 +173,6 @@ const applyLanguage = () => {
     monthLabel.textContent = t("month");
   }
 
-  if (languageLabel) {
-    languageLabel.textContent = t("language");
-  }
-
   if (languageSelect) {
     languageSelect.value = currentLanguage;
   }
@@ -204,7 +199,9 @@ const applyLanguage = () => {
 
   if (serverModeBadge) {
     serverModeBadge.textContent = t("serverModeBadge");
-    serverModeBadge.hidden = storageMode !== "server";
+    if (!isServerModeUiActive()) {
+      serverModeBadge.hidden = true;
+    }
   }
 
   if (exportButton) {
@@ -394,6 +391,7 @@ const isServerModeActive = (settings) => {
 };
 
 const getStorageModeFromSettings = (settings) => (isServerModeActive(settings) ? "server" : "local");
+const isServerModeUiActive = () => storageMode === "server";
 
 async function loadAppSettings() {
   try {
@@ -416,7 +414,7 @@ async function initializeStorageMode() {
   currentLanguage = getStoredLanguage() || defaultLanguage;
   applyLanguage();
 
-  if (storageMode === "server") {
+  if (isServerModeUiActive()) {
     installPromptDismissed = true;
     if (installButton) {
       installButton.hidden = true;
@@ -425,12 +423,15 @@ async function initializeStorageMode() {
   }
 
   if (serverModeBadge) {
-    serverModeBadge.hidden = storageMode !== "server";
+    serverModeBadge.hidden = true;
     serverModeBadge.textContent = t("serverModeBadge");
+    if (isServerModeUiActive()) {
+      serverModeBadge.hidden = false;
+    }
   }
 }
 
-const shouldHideInstallUi = () => getStorageModeFromSettings({ serverMode: storageMode === "server" }) === "server" || window.matchMedia("(display-mode: standalone)").matches;
+const shouldHideInstallUi = () => isServerModeUiActive() || window.matchMedia("(display-mode: standalone)").matches;
 
 const exportBoardData = () => {
   const boards = getLocalBoards();
@@ -967,7 +968,7 @@ const enableInstallButton = () => {
 };
 
 window.addEventListener("beforeinstallprompt", (event) => {
-  if (storageMode === "server") {
+  if (isServerModeUiActive()) {
     event.preventDefault();
     deferredInstallPrompt = null;
     hideInstallPrompt();
