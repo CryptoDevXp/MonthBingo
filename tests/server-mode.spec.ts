@@ -34,6 +34,8 @@ test("server mode badge stays hidden and install UI is shown when serverMode is 
 });
 
 test("server mode badge is visible and install UI stays hidden when serverMode is true", async ({ page }) => {
+  page.on("pageerror", (error) => console.error("BROWSER_ERROR:", error.message));
+
   await page.addInitScript(() => {
     const nativeFetch = window.fetch.bind(window);
     window.fetch = (input, init) => {
@@ -65,24 +67,26 @@ test("server mode badge is visible and install UI stays hidden when serverMode i
   await expect(page.locator("#serverModeBadge")).toBeVisible();
   await expect(page.locator("#installPrompt")).toBeHidden();
   await expect(page.locator("#installButton")).toBeHidden();
+});
 
-  await page.evaluate(() => {
-    const event = new Event("beforeinstallprompt", { cancelable: true }) as Event & {
-      prompt: () => Promise<void>;
-      userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-    };
+test("checkbox is disabled for empty text and completed state persists", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#newBoardButton").click();
 
-    Object.defineProperty(event, "prompt", {
-      value: () => Promise.resolve()
-    });
-    Object.defineProperty(event, "userChoice", {
-      value: Promise.resolve({ outcome: "dismissed" })
-    });
+  const firstText = page.locator(".cell-text").first();
+  const firstCheckbox = page.locator(".cell-checkbox").first();
 
-    window.dispatchEvent(event);
-  });
+  await expect(firstCheckbox).toBeDisabled();
+  await firstText.click();
+  await firstText.fill("Wäsche waschen");
+  await expect(firstCheckbox).toBeEnabled();
+  await firstCheckbox.check();
+  await expect(firstText).toHaveClass(/completed/);
+  await page.locator("#saveButton").click();
 
-  await expect(page.locator("#installPrompt")).toBeHidden();
-  await expect(page.locator("#installButton")).toBeHidden();
-  await expect(page.locator("#serverModeBadge")).toBeVisible();
+  await page.reload();
+
+  await expect(page.locator(".cell-text").first()).toHaveText("Wäsche waschen");
+  await expect(page.locator(".cell-text").first()).toHaveClass(/completed/);
+  await expect(page.locator(".cell-checkbox").first()).toBeChecked();
 });

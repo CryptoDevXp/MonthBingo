@@ -15,10 +15,12 @@ const installPromptDismiss = document.getElementById("installPromptDismiss");
 const languageSelect = document.getElementById("languageSelect");
 const monthLabel = document.getElementById("monthLabel");
 const serverModeBadge = document.getElementById("serverModeBadge");
+const editButton = document.getElementById("editButton");
 
 let deferredInstallPrompt = null;
 let installPromptDismissed = false;
 let currentLanguage = "de";
+let isEditMode = false;
 
 const LANGUAGE_STORAGE_KEY = "month-bingo-language";
 const DEFAULT_LANGUAGE = "de";
@@ -74,7 +76,12 @@ const translations = {
     loadBoardError: "Board konnte nicht geladen werden.",
     boardDeleteError: "Löschen fehlgeschlagen.",
     saveError: "Speichern fehlgeschlagen.",
-    createBoardError: "Neues Board konnte nicht erstellt werden."
+    createBoardError: "Neues Board konnte nicht erstellt werden.",
+    editModeOn: "Bearbeitungsmodus aktiviert.",
+    editModeOff: "Bearbeitungsmodus deaktiviert.",
+    lockCells: "Zellen sperren",
+    unlockCells: "Zellen entsperren",
+    edit: "Bearbeiten"
   },
   en: {
     month: "Month",
@@ -127,7 +134,12 @@ const translations = {
     loadBoardError: "Could not load the board.",
     boardDeleteError: "Delete failed.",
     saveError: "Save failed.",
-    createBoardError: "Could not create a new board."
+    createBoardError: "Could not create a new board.",
+    editModeOn: "Edit mode enabled.",
+    editModeOff: "Edit mode disabled.",
+    lockCells: "Lock cells",
+    unlockCells: "Unlock cells",
+    edit: "Edit"
   }
 };
 
@@ -273,9 +285,12 @@ const pastelColors = [
 
 const STORAGE_KEY = "month-bingo-boards-v1";
 const defaultCells = () => Array(16).fill("");
+const defaultChecked = () => Array(16).fill(false);
 let storageMode = "local";
 let currentCells = defaultCells();
+let currentChecked = defaultChecked();
 let currentBoardId = null;
+let isEditing = false;
 
 const todayMonth = () => new Date().toISOString().slice(0, 7);
 
@@ -313,7 +328,8 @@ const getLocalBoards = () => {
       .map((board) => ({
         ...board,
         id: board.id ?? `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        cells: Array.isArray(board.cells) && board.cells.length === 16 ? board.cells.slice() : defaultCells()
+        cells: Array.isArray(board.cells) && board.cells.length === 16 ? board.cells.slice() : defaultCells(),
+        checked: normalizeChecked(board.checked)
       }));
   } catch (error) {
     console.warn("Lokaler Speicher konnte nicht gelesen werden:", error);
@@ -347,7 +363,8 @@ const normalizeImportedBoards = (rawBoards) => {
       return {
         id: board.id !== undefined && board.id !== null ? String(board.id) : `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         month: board.month,
-        cells
+        cells,
+        checked: normalizeChecked(board.checked)
       };
     })
     .filter(Boolean);
@@ -356,7 +373,8 @@ const normalizeImportedBoards = (rawBoards) => {
 const normalizeBoardSnapshot = (board) => ({
   id: board && board.id !== undefined && board.id !== null ? board.id : `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
   month: board && typeof board.month === "string" ? board.month : todayMonth(),
-  cells: Array.isArray(board && board.cells) && board.cells.length === 16 ? board.cells.slice() : defaultCells()
+  cells: Array.isArray(board && board.cells) && board.cells.length === 16 ? board.cells.slice() : defaultCells(),
+  checked: normalizeChecked(board.checked)
 });
 
 const syncLocalBackupFromServer = (serverBoards) => {
@@ -509,30 +527,89 @@ const importBoardData = async (event) => {
   }
 };
 
+const setBoardEditing = (enabled, announce = false) => {
+  isEditing = enabled;
+  boardElement.querySelectorAll(".cell").forEach((cell) => {
+    cell.contentEditable = enabled ? "true" : "false";
+    cell.setAttribute("aria-disabled", enabled ? "false" : "true");
+    cell.classList.toggle("locked", !enabled);
+  });
+  boardElement.querySelectorAll(".cell-text").forEach((text) => {
+    text.contentEditable = enabled ? "true" : "false";
+  });
+
+  if (editButton) {
+    editButton.textContent = isEditing ? t("lockCells") : t("edit");
+  }
+
+  if (announce) {
+    setStatus(enabled ? t("editModeOn") : t("editModeOff"));
+  }
+};
+
 function renderBoard() {
   boardElement.innerHTML = "";
 
   currentCells.forEach((value, index) => {
     const cell = document.createElement("div");
     cell.className = "cell";
-    cell.contentEditable = true;
-    cell.dataset.index = String(index);
+    cell.contentEditable = isEditing ? "true" : "false";
+    cell.setAttribute("aria-disabled", isEditing ? "false" : "true");
+    cell.classList.toggle("locked", !isEditing);
     cell.style.background = pastelColors[index % pastelColors.length];
-    cell.textContent = value;
 
-    cell.addEventListener("input", () => {
-      currentCells[index] = cell.textContent.trim();
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "cell-checkbox";
+    checkbox.checked = currentChecked[index] && value.trim().length > 0;
+    checkbox.disabled = value.trim().length === 0;
+
+    const text = document.createElement("span");
+    text.className = "cell-text";
+    text.contentEditable = isEditing ? "true" : "false";
+    text.textContent = value;
+    text.classList.toggle("completed", checkbox.checked);
+
+    checkbox.addEventListener("change", () => {
+      if (!text.textContent.trim()) {
+        checkbox.checked = false;
+        return;
+      }
+      currentChecked[index] = checkbox.checked;
+      text.classList.toggle("completed", checkbox.checked);
     });
 
-    cell.addEventListener("keydown", (event) => {
+    const updateCheckboxFromText = () => {
+      const nextText = text.textContent.trim();
+      currentCells[index] = nextText;
+      checkbox.disabled = nextText.length === 0;
+      if (!nextText) {
+        checkbox.checked = false;
+        currentChecked[index] = false;
+        text.classList.remove("completed");
+      }
+    };
+
+    text.addEventListener("input", updateCheckboxFromText);
+    text.addEventListener("keyup", updateCheckboxFromText);
+    text.addEventListener("blur", updateCheckboxFromText);
+
+    const observer = new MutationObserver(updateCheckboxFromText);
+    observer.observe(text, { childList: true, characterData: true, subtree: true });
+
+    text.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        cell.blur();
+        text.blur();
       }
     });
 
+    cell.appendChild(checkbox);
+    cell.appendChild(text);
     boardElement.appendChild(cell);
   });
+
+  setBoardEditing(isEditing);
 }
 
 async function deleteBoard(boardId, monthId) {
@@ -701,6 +778,8 @@ async function loadMonthList() {
 }
 
 async function loadBoard(month, boardId = null) {
+  isEditing = false;
+
   try {
     if (storageMode === "local") {
       const boards = getLocalBoards();
@@ -711,6 +790,7 @@ async function loadBoard(month, boardId = null) {
       if (!board) {
         currentBoardId = null;
         currentCells = defaultCells();
+        currentChecked = defaultChecked();
         renderBoard();
         setStatus(t("boardLoadFailure", { label: formatMonthLabel(month) }));
         await loadMonthList();
@@ -719,6 +799,8 @@ async function loadBoard(month, boardId = null) {
 
       currentBoardId = board.id;
       currentCells = Array.isArray(board.cells) && board.cells.length === 16 ? board.cells.slice() : defaultCells();
+      currentChecked = normalizeChecked(board.checked);
+
       renderBoard();
       setStatus(t("boardLoaded", { label: formatMonthLabel(month) }));
       await loadMonthList();
@@ -741,7 +823,8 @@ async function loadBoard(month, boardId = null) {
 
     currentBoardId = data.id ?? null;
     currentCells = Array.isArray(data.cells) && data.cells.length === 16 ? data.cells : defaultCells();
-    syncLocalBackupFromServer([{ id: currentBoardId, month, cells: currentCells }]);
+    currentChecked = normalizeChecked(data.checked);
+    syncLocalBackupFromServer([{ id: currentBoardId, month, cells: currentCells, checked: currentChecked }]);
     renderBoard();
     setStatus(t("boardLoadedServer", { label: formatMonthLabel(month) }));
     await loadMonthList();
@@ -756,6 +839,7 @@ async function loadBoard(month, boardId = null) {
     if (!board) {
       currentBoardId = null;
       currentCells = defaultCells();
+      currentChecked = defaultChecked();
       renderBoard();
       setStatus(t("serverFallbackMissing", { label: formatMonthLabel(month) }), true);
       await loadMonthList();
@@ -764,6 +848,7 @@ async function loadBoard(month, boardId = null) {
 
     currentBoardId = board.id;
     currentCells = Array.isArray(board.cells) && board.cells.length === 16 ? board.cells.slice() : defaultCells();
+    currentChecked = normalizeChecked(board.checked);
     renderBoard();
     setStatus(t("serverFallback"), true);
     await loadMonthList();
@@ -788,7 +873,8 @@ async function saveBoard() {
       const persistedBoard = {
         id: existingIndex >= 0 ? boards[existingIndex].id : `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         month,
-        cells: currentCells.slice()
+        cells: currentCells.slice(),
+        checked: currentChecked.slice()
       };
 
       if (existingIndex >= 0) {
@@ -799,6 +885,7 @@ async function saveBoard() {
 
       persistLocalBoards(boards);
       currentBoardId = persistedBoard.id;
+      setBoardEditing(false);
       setStatus(t("saveSuccessLocal", { label: formatMonthLabel(month) }));
       await loadMonthList();
       return;
@@ -809,7 +896,7 @@ async function saveBoard() {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ id: currentBoardId, month, cells: currentCells })
+      body: JSON.stringify({ id: currentBoardId, month, cells: currentCells, checked: currentChecked })
     });
 
     const data = await response.json();
@@ -819,7 +906,8 @@ async function saveBoard() {
     }
 
     currentBoardId = data.id ?? currentBoardId;
-    syncLocalBackupFromServer([{ id: currentBoardId, month, cells: currentCells }]);
+    syncLocalBackupFromServer([{ id: currentBoardId, month, cells: currentCells, checked: currentChecked }]);
+    setBoardEditing(false);
     setStatus(t("saveSuccess", { label: formatMonthLabel(month) }));
     await loadMonthList();
   } catch (error) {
@@ -834,7 +922,8 @@ async function saveBoard() {
     const persistedBoard = {
       id: existingIndex >= 0 ? boards[existingIndex].id : `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       month,
-      cells: currentCells.slice()
+      cells: currentCells.slice(),
+      checked: currentChecked.slice()
     };
 
     if (existingIndex >= 0) {
@@ -860,13 +949,16 @@ async function createNewBoard() {
       const newBoard = {
         id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
         month,
-        cells: defaultCells()
+        cells: defaultCells(),
+        checked: defaultChecked()
       };
 
       boards.push(newBoard);
       persistLocalBoards(boards);
       currentBoardId = newBoard.id;
       currentCells = newBoard.cells.slice();
+      currentChecked = defaultChecked();
+      setBoardEditing(true);
       renderBoard();
       setStatus(t("newBoardLocal", { label: formatMonthLabel(month) }));
       await loadMonthList();
@@ -878,7 +970,7 @@ async function createNewBoard() {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ month, cells: defaultCells() })
+      body: JSON.stringify({ month, cells: defaultCells(), checked: defaultChecked() })
     });
     const data = await response.json();
 
@@ -888,7 +980,9 @@ async function createNewBoard() {
 
     currentBoardId = data.id ?? null;
     currentCells = Array.isArray(data.cells) && data.cells.length === 16 ? data.cells : defaultCells();
+    currentChecked = normalizeChecked(data.checked);
     syncLocalBackupFromServer([{ id: currentBoardId, month, cells: currentCells }]);
+    setBoardEditing(true);
     renderBoard();
     setStatus(t("newBoardServer", { label: formatMonthLabel(month) }));
     await loadMonthList();
@@ -899,13 +993,15 @@ async function createNewBoard() {
     const newBoard = {
       id: `local-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       month,
-      cells: defaultCells()
+      cells: defaultCells(),
+      checked: defaultChecked()
     };
 
     boards.push(newBoard);
     persistLocalBoards(boards);
     currentBoardId = newBoard.id;
     currentCells = newBoard.cells.slice();
+    setBoardEditing(true);
     renderBoard();
     setStatus(t("newBoardLocalFallback"), true);
     await loadMonthList();
@@ -1020,9 +1116,16 @@ installPromptDismiss?.addEventListener("click", (event) => {
   installPromptDismissed = true;
   hideInstallPrompt();
 });
+editButton?.addEventListener("click", () => {
+  setBoardEditing(!isEditing, true);
+});
 
 (async () => {
   await initializeStorageMode();
   await loadMonthList();
   await loadBoard(monthInput.value);
 })();
+
+const normalizeChecked = (checked) => Array.isArray(checked) && checked.length === 16
+  ? checked.map((value) => value === true)
+  : defaultChecked();

@@ -330,6 +330,11 @@ button.install-button {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
 
+.cell.locked {
+  cursor: default;
+  user-select: text;
+}
+
 .cell:focus {
   transform: scale(1.02);
   box-shadow: 0 0 0 3px rgba(124, 109, 240, 0.22);
@@ -338,6 +343,37 @@ button.install-button {
 .cell[contenteditable="true"]:empty::before {
   content: "Text";
   opacity: 0.45;
+}
+
+.cell-checkbox {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 18px;
+  height: 18px;
+  accent-color: #7c6df0;
+  cursor: pointer;
+}
+
+.cell-checkbox:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.cell-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 100%;
+  text-align: center;
+  outline: none;
+}
+
+.cell-text.completed {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  opacity: 0.68;
 }
 
 @media (max-width: 860px) {
@@ -386,6 +422,7 @@ button.install-button {
   .status,
   .month-item .delete-button,
   #newBoardButton,
+  #editButton,
   #saveButton,
   #printButton {
     display: none !important;

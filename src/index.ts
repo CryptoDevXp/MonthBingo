@@ -91,6 +91,22 @@ const normalizeCells = (cells: unknown): string[] => {
   });
 };
 
+const normalizeChecked = (checked: unknown): boolean[] => {
+  const safeArray = Array.isArray(checked) ? checked : [];
+  return Array.from({ length: 16 }, (_, index) => safeArray[index] === true);
+};
+
+const parseChecked = (raw: unknown): boolean[] => {
+  if (typeof raw !== "string") {
+    return normalizeChecked(raw);
+  }
+  try {
+    return normalizeChecked(JSON.parse(raw));
+  } catch {
+    return normalizeChecked([]);
+  }
+};
+
 let databaseReady: Promise<void> | undefined;
 
 const ensureDatabaseReady = async () => {
@@ -113,6 +129,7 @@ async function initDatabase() {
         user_id TEXT NOT NULL,
         month TEXT NOT NULL,
         cells TEXT NOT NULL,
+        checked TEXT NOT NULL DEFAULT '[]',
         updated_at TEXT NOT NULL
       )
     `);
@@ -121,8 +138,17 @@ async function initDatabase() {
 
   const columns = await all<{ name: string }>("PRAGMA table_info(boards)");
   const columnNames = new Set(columns.map((column) => column.name));
-  const requiredEnglishColumns = ["id", "user_id", "month", "cells", "updated_at"];
-  const hasEnglishSchema = requiredEnglishColumns.every((columnName) => columnNames.has(columnName));
+  const requiredEnglishColumns = ["id", "user_id", "month", "cells", "checked", "updated_at"];
+  const baseEnglishColumns = ["id", "user_id", "month", "cells", "updated_at"];
+  const hasBaseEnglishSchema = baseEnglishColumns.every((columnName) => columnNames.has(columnName));
+
+  if (!columnNames.has("checked") && hasBaseEnglishSchema) {
+    await run("ALTER TABLE boards ADD COLUMN checked TEXT NOT NULL DEFAULT '[]'");
+  }
+
+  const updatedColumns = await all<{ name: string }>("PRAGMA table_info(boards)");
+  const updatedColumnNames = new Set(updatedColumns.map((column) => column.name));
+  const hasEnglishSchema = requiredEnglishColumns.every((columnName) => updatedColumnNames.has(columnName));
 
   if (!hasEnglishSchema) {
     await run("ALTER TABLE boards RENAME TO boards_legacy");
@@ -132,6 +158,7 @@ async function initDatabase() {
         user_id TEXT NOT NULL,
         month TEXT NOT NULL,
         cells TEXT NOT NULL,
+        checked TEXT NOT NULL DEFAULT '[]',
         updated_at TEXT NOT NULL
       )
     `);
@@ -144,11 +171,12 @@ async function initDatabase() {
     const updatedAtColumn = legacyColumnNames.has("updated_at") ? "updated_at" : legacyColumnNames.has("aktualisiert_am") ? "aktualisiert_am" : "datetime('now')";
 
     await run(`
-      INSERT INTO boards (id, user_id, month, cells, updated_at)
+      INSERT INTO boards (id, user_id, month, cells, checked, updated_at)
       SELECT id,
              ${userColumn},
              ${monthColumn},
              ${cellsColumn},
+             '[]',
              ${updatedAtColumn}
       FROM boards_legacy ORDER BY id
     `);
@@ -185,19 +213,24 @@ app.get("/api/boards", async (req, res) => {
   try {
     const userId = getBoardUserId(req, res);
     const rows = publicDatabaseMode
-      ? await all<{ id: number; month: string; cells: string }>(
-          "SELECT id, month, cells FROM boards WHERE user_id = ? ORDER BY month DESC, id DESC",
+      ? await all<{ id: number; month: string; cells: string; checked: string }>(
+          "SELECT id, month, cells, checked FROM boards WHERE user_id = ? ORDER BY month DESC, id DESC",
           [userId]
         )
-      : await all<{ id: number; month: string; cells: string }>(
-          "SELECT id, month, cells FROM boards ORDER BY month DESC, id DESC"
+      : await all<{ id: number; month: string; cells: string; checked: string }>(
+          "SELECT id, month, cells, checked FROM boards ORDER BY month DESC, id DESC"
         );
 
     const boards = rows.map((row) => {
       try {
-        return { id: row.id, month: row.month, cells: normalizeCells(JSON.parse(row.cells)) };
+        return {
+          id: row.id,
+          month: row.month,
+          cells: normalizeCells(JSON.parse(row.cells)),
+          checked: parseChecked(row.checked)
+        };
       } catch {
-        return { id: row.id, month: row.month, cells: Array(16).fill("") };
+        return { id: row.id, month: row.month, cells: Array(16).fill(""), checked: normalizeChecked([]) };
       }
     });
 
@@ -218,27 +251,27 @@ app.get("/api/board", async (req, res) => {
   const month = typeof req.query.month === "string" ? req.query.month : new Date().toISOString().slice(0, 7);
 
   const row = id
-    ? ((await get<{ id: number; month: string; cells: string }>(
+    ? ((await get<{ id: number; month: string; cells: string; checked: string }>(
         publicDatabaseMode
-          ? "SELECT id, month, cells FROM boards WHERE id = ? AND user_id = ?"
-          : "SELECT id, month, cells FROM boards WHERE id = ?",
+          ? "SELECT id, month, cells, checked FROM boards WHERE id = ? AND user_id = ?"
+          : "SELECT id, month, cells, checked FROM boards WHERE id = ?",
         publicDatabaseMode ? [id, userId] : [id]
-      )) as { id: number; month: string; cells: string } | undefined)
-    : ((await get<{ id: number; month: string; cells: string }>(
+      )) as { id: number; month: string; cells: string; checked: string } | undefined)
+    : ((await get<{ id: number; month: string; cells: string; checked: string }>(
         publicDatabaseMode
-          ? "SELECT id, month, cells FROM boards WHERE user_id = ? AND month = ? ORDER BY id DESC LIMIT 1"
-          : "SELECT id, month, cells FROM boards WHERE month = ? ORDER BY id DESC LIMIT 1",
+          ? "SELECT id, month, cells, checked FROM boards WHERE user_id = ? AND month = ? ORDER BY id DESC LIMIT 1"
+          : "SELECT id, month, cells, checked FROM boards WHERE month = ? ORDER BY id DESC LIMIT 1",
         publicDatabaseMode ? [userId, month] : [month]
-      )) as { id: number; month: string; cells: string } | undefined);
+      )) as { id: number; month: string; cells: string; checked: string } | undefined);
 
   if (!row) {
-    res.json({ id: null, month, cells: Array(16).fill("") });
+    res.json({ id: null, month, cells: Array(16).fill(""), checked: normalizeChecked([]) });
     return;
   }
 
   try {
     const cells = JSON.parse(row.cells) as unknown;
-    res.json({ id: row.id, month: row.month, cells: normalizeCells(cells) });
+    res.json({ id: row.id, month: row.month, cells: normalizeCells(cells), checked: parseChecked(row.checked) });
   } catch (error) {
     res.status(500).json({ message: "Error loading the board." });
   }
@@ -251,7 +284,7 @@ app.post("/api/board", async (req, res) => {
   }
 
   const userId = getBoardUserId(req, res);
-  const { id, month, cells } = req.body as { id?: number | string; month?: string; cells?: unknown };
+  const { id, month, cells, checked } = req.body as { id?: number | string; month?: string; cells?: unknown; checked?: unknown };
 
   if (typeof month !== "string" || !month) {
     res.status(400).json({ message: "Month is required." });
@@ -259,28 +292,29 @@ app.post("/api/board", async (req, res) => {
   }
 
   const normalizedCells = normalizeCells(cells);
+  const normalizedChecked = normalizeChecked(checked);
 
   if (id !== undefined && id !== null && id !== "") {
     const boardId = Number(id);
     await run(
       publicDatabaseMode
-        ? "UPDATE boards SET cells = ?, updated_at = ? WHERE id = ? AND user_id = ?"
-        : "UPDATE boards SET cells = ?, updated_at = ? WHERE id = ?",
+        ? "UPDATE boards SET cells = ?, checked = ?, updated_at = ? WHERE id = ? AND user_id = ?"
+        : "UPDATE boards SET cells = ?, checked = ?, updated_at = ? WHERE id = ?",
       publicDatabaseMode
-        ? [JSON.stringify(normalizedCells), new Date().toISOString(), boardId, userId]
-        : [JSON.stringify(normalizedCells), new Date().toISOString(), boardId]
+        ? [JSON.stringify(normalizedCells), JSON.stringify(normalizedChecked), new Date().toISOString(), boardId, userId]
+        : [JSON.stringify(normalizedCells), JSON.stringify(normalizedChecked), new Date().toISOString(), boardId]
     );
 
-    res.json({ id: boardId, month, cells: normalizedCells });
+    res.json({ id: boardId, month, cells: normalizedCells, checked: normalizedChecked });
     return;
   }
 
   const insertedId = await run(
-    "INSERT INTO boards (user_id, month, cells, updated_at) VALUES (?, ?, ?, ?)",
-    [userId, month, JSON.stringify(normalizedCells), new Date().toISOString()]
+    "INSERT INTO boards (user_id, month, cells, checked, updated_at) VALUES (?, ?, ?, ?, ?)",
+    [userId, month, JSON.stringify(normalizedCells), JSON.stringify(normalizedChecked), new Date().toISOString()]
   );
 
-  res.json({ id: insertedId, month, cells: normalizedCells });
+  res.json({ id: insertedId, month, cells: normalizedCells, checked: normalizedChecked });
 });
 
 app.delete("/api/board", async (req, res) => {
